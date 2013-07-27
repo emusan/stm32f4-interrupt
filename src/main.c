@@ -15,14 +15,24 @@
 #include "stm32f4xx.h"
 #include "stm32f4xx_gpio.h"
 #include "stm32f4xx_rcc.h"
+#include "stm32f4xx_exti.h"
+#include "stm32f4xx_syscfg.h"
+#include "misc.h"
 
-GPIO_InitTypeDef  GPIO_InitStructure;
+GPIO_InitTypeDef GPIO_InitStructure;
+EXTI_InitTypeDef EXTI_InitStructure;
+NVIC_InitTypeDef NVIC_InitStructure;
 
 void delay(float time);
+void EXTI0_IRQHandler(void);
+
+int presses = 0;
 
 int main(void)
 {
-	RCC_AHB1PeriphClockCmd(RCC_AHB1Periph_GPIOD, ENABLE);		// Start clock on GPIOD
+	RCC_AHB1PeriphClockCmd(RCC_AHB1Periph_GPIOD,ENABLE);		// Start clock on GPIOD
+	RCC_AHB1PeriphClockCmd(RCC_AHB1Periph_GPIOA,ENABLE);		// Same for GPIOA
+	RCC_APB2PeriphClockCmd(RCC_APB2Periph_SYSCFG,ENABLE);		// Same for the SYSCFG
 
 	// This configures the Discovery LED pins D(12-15)
 	// 12 = green/left
@@ -41,28 +51,49 @@ int main(void)
 	// some degree.
 	SCB->CPACR |= ((3UL << 10*2)|(3UL << 11*2));
 
+	GPIO_InitStructure.GPIO_Pin = GPIO_Pin_0;
+	GPIO_InitStructure.GPIO_Mode = GPIO_Mode_IN;
+	GPIO_InitStructure.GPIO_PuPd = GPIO_PuPd_NOPULL;
+	GPIO_Init(GPIOA,&GPIO_InitStructure);
+
+	// Connect EXTI0 to GPIOA
+	SYSCFG_EXTILineConfig(EXTI_PortSourceGPIOA,EXTI_PinSource0);
+
+	EXTI_InitStructure.EXTI_Line = EXTI_Line0;
+	EXTI_InitStructure.EXTI_Mode = EXTI_Mode_Interrupt;
+	EXTI_InitStructure.EXTI_Trigger = EXTI_Trigger_Rising;
+	EXTI_InitStructure.EXTI_LineCmd = ENABLE;
+	EXTI_Init(&EXTI_InitStructure);
+
+	// Set up the NVIC to have a low priority
+  NVIC_InitStructure.NVIC_IRQChannel = EXTI0_IRQn;
+  NVIC_InitStructure.NVIC_IRQChannelPreemptionPriority = 0x0F;
+  NVIC_InitStructure.NVIC_IRQChannelSubPriority = 0x0F;
+  NVIC_InitStructure.NVIC_IRQChannelCmd = ENABLE;
+  NVIC_Init(&NVIC_InitStructure);
+
 	while (1)
 	{
-		GPIO_SetBits(GPIOD,GPIO_Pin_12);	// Turn on green
+		if (presses == 1) {
+			GPIO_SetBits(GPIOD,GPIO_Pin_12);	// Turn on green
+		}
 
-		delay(0xFFFFF);
+		if (presses == 2) {
+			GPIO_SetBits(GPIOD,GPIO_Pin_13);	// Turn on orange
+		}
 
-		GPIO_SetBits(GPIOD,GPIO_Pin_13);	// Turn on orange
+		if (presses == 3) {
+			GPIO_SetBits(GPIOD,GPIO_Pin_14);	// Turn on red
+		}
 
-		delay(0xFFFFF);
+		if (presses == 4) {
+			GPIO_SetBits(GPIOD,GPIO_Pin_15);	// Turn on blue
+		}
 
-		GPIO_SetBits(GPIOD,GPIO_Pin_14);	// Turn on red
-
-		delay(0xFFFFF);
-
-		GPIO_SetBits(GPIOD,GPIO_Pin_15);	// Turn on blue
-
-		delay(0xFFFFF);
-
-		// Turn all off
-		GPIO_ResetBits(GPIOD,GPIO_Pin_12|GPIO_Pin_13|GPIO_Pin_14|GPIO_Pin_15);
-
-		delay(0xFFFFF);
+		if (presses == 0) {
+			// Turn all off
+			GPIO_ResetBits(GPIOD,GPIO_Pin_12|GPIO_Pin_13|GPIO_Pin_14|GPIO_Pin_15);
+		}
 	}
 }
 
@@ -71,6 +102,22 @@ void delay(float time)
 	while(time--)
 	{
 	}
+}
+
+void EXTI0_IRQHandler(void)
+{
+  if(EXTI_GetITStatus(EXTI_Line0) != RESET)
+  {
+		if (presses < 5)
+		{
+			presses++;
+		} else
+		{
+			presses = 0;
+		}
+    /* Clear the EXTI line 0 pending bit */
+    EXTI_ClearITPendingBit(EXTI_Line0);
+  }
 }
 
 #ifdef  USE_FULL_ASSERT
